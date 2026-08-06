@@ -8,6 +8,7 @@ Contents
 - Persistence context and lifecycle
 - JPQL and Criteria
 - Transactions: propagation, isolation, rollback rules
+- Isolation levels and transactional anomalies (dirty/non-repeatable/phantom reads)
 - Locking: optimistic, pessimistic, StaleObject, LockModeType
 - Common problems: LazyInitializationException, N+1 selects, batching, ID strategies
 - Hibernate-specific features and useful objects/methods
@@ -42,6 +43,69 @@ Transactions
   - rollbackFor / noRollbackFor to customize exception-driven rollback behavior
 - In Spring, annotate service-layer methods (public) with @Transactional. Do not rely on controller-level transactions.
 - Beware: calling an @Transactional method from the same class (this.someMethod()) bypasses proxy and will not create a transaction.
+
+Isolation levels and transactional anomalies
+
+Understanding isolation levels is crucial for correctness under concurrency. Isolation controls visibility of changes made by concurrent transactions and determines which anomalies can occur.
+
+Common phenomena (SQL standard definitions):
+- Dirty read: Transaction T1 reads data written by T2 that has not yet committed. If T2 rolls back, T1 saw invalid data.
+- Non-repeatable read: T1 reads the same row twice and sees different data because T2 committed an update in between.
+- Phantom read: T1 re-executes a query and sees additional rows inserted by T2 that weren't visible earlier.
+
+Isolation levels (from weakest to strongest) with anomalies they allow/prevent:
+
+- READ UNCOMMITTED
+  - Allows: dirty reads, non-repeatable reads, phantom reads.
+  - Rarely used in OLTP; supported by some DBs.
+
+- READ COMMITTED (common default, e.g., PostgreSQL)
+  - Prevents: dirty reads (a transaction only sees committed data).
+  - Allows: non-repeatable reads and phantom reads.
+  - Use case: most applications prefer this as a balance of consistency and concurrency.
+
+- REPEATABLE READ (MySQL default for InnoDB; differs by DB)
+  - Prevents: dirty reads and non-repeatable reads.
+  - Allows: phantom reads (DBs may implement variations—e.g., InnoDB's REPEATABLE_READ prevents phantoms via next-key locking).
+  - Use when you need stable reads within a transaction but can tolerate phantoms or rely on DB's specific behavior.
+
+- SERIALIZABLE
+  - Prevents: dirty reads, non-repeatable reads, and phantom reads. Provides full serializability—the strongest isolation.
+  - Use case: when strict correctness is required (but reduces concurrency and increases locking/blocking or abort rates).
+
+Practical notes and examples
+- Default DB behavior differs: PostgreSQL defaults to READ COMMITTED; MySQL/InnoDB defaults to REPEATABLE READ. Always verify your DB's semantics before choosing an isolation level.
+
+- Example: Non-repeatable read under READ_COMMITTED
+  - T1: BEGIN; SELECT balance FROM account WHERE id=1; -- sees 100
+  - T2: BEGIN; UPDATE account SET balance=200 WHERE id=1; COMMIT;
+  - T1: SELECT balance FROM account WHERE id=1; -- now sees 200 (non-repeatable read)
+
+- Example: Phantom under REPEATABLE_READ (DB allowing phantoms)
+  - T1: BEGIN; SELECT count(*) FROM orders WHERE customer_id = 10; -- sees 5
+  - T2: BEGIN; INSERT INTO orders(customer_id, ...) VALUES (10, ...); COMMIT;
+  - T1: SELECT count(*) FROM orders WHERE customer_id = 10; -- sees 6 (phantom row)
+
+- Using SERIALIZABLE prevents these anomalies, often by acquiring stricter locks or by MVCC and conflict detection, but can increase transaction aborts or blocking.
+
+Setting isolation in Spring
+- Use @Transactional(isolation = Isolation.REPEATABLE_READ) on service methods where needed. Example:
+
+```java
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void processSensitiveOperation() { ... }
+```
+
+- In some architectures you may prefer to raise isolation only for short critical sections or to use explicit pessimistic locks for operations that must avoid anomalies without globally raising isolation.
+
+When to use which isolation level
+- READ_COMMITTED: good default for OLTP where immediate consistency isn't strict and higher throughput is desired.
+- REPEATABLE_READ: when you need consistent reads inside a transaction (e.g., complex calculations) and DB implements it efficiently.
+- SERIALIZABLE: use sparingly for operations requiring strict correctness (e.g., financial transfers with business invariants) or use application-level compensation/sagas.
+
+Locking strategies vs isolation levels
+- Isolation and locking interact: lower isolation + explicit locks (SELECT ... FOR UPDATE) can achieve stronger guarantees for specific rows without raising global isolation.
+- Optimistic locking (@Version) provides a way to detect conflicts at commit time regardless of isolation level and is a good fit when conflicts are rare.
 
 Locking strategies
 - Optimistic locking: @Version field. Lightweight; detects concurrent modifications at commit via version check. Preferred when conflicts are rare.
