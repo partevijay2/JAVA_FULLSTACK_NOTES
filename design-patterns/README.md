@@ -7,6 +7,7 @@ Available notes:
 - [Singleton](Singleton.md) — creational pattern ensuring a single instance.
 - [Factory Method](FactoryMethod.md) — creational pattern that defers instantiation to subclasses.
 - [Microservices](Microservices.md) — essential microservices design patterns, resiliency, integration, and operational patterns.
+- [Backend for Frontend (BFF)](BackendForFrontend.md) — client-specific APIs, aggregation, security, ownership, and trade-offs.
 - [Locking](Locking.md) — Java locking and concurrency patterns.
 - [JPA / Hibernate / Transactions](JPA_Hibernate_Transactions.md) — ORM, transactions, isolation levels, locking, and common pitfalls.
 - [ThreadLocal](ThreadLocal.md) — ThreadLocal best practices and examples.
